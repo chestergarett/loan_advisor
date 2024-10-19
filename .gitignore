@@ -1,1 +1,4 @@
 msme_venv/
+data/
+.env
+.DS_Store
