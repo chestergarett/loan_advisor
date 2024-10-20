@@ -5,6 +5,7 @@ from langchain.vectorstores.chroma import Chroma # Importing Chroma vector store
 from langchain.embeddings import OpenAIEmbeddings # Importing OpenAI embeddings from Langchain
 from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_ollama import ChatOllama
+from dotenv import load_dotenv
 import os
 import shutil
 
@@ -12,21 +13,21 @@ import shutil
 DATA_PATH = r'./data'
 CHROMA_PATH = r'./chroma/'
 
+load_dotenv()
+openai_api_key = os.getenv('OPEN_AI_API_KEY')
+
 def load_documents():
   """
   Load PDF documents from the specified directory using PyPDFDirectoryLoader.
   Returns:
-  List of Document objects: Loaded PDF documents represented as Langchain
+  List of Document objects: Loaded PDF documents represented as Langch  ain
                                                           Document objects.
   """
   # Initialize PDF loader with specified directory
   document_loader = PyPDFDirectoryLoader(DATA_PATH)
   # Load PDF documents and return them as a list of Document objects
   return document_loader.load()
-
-if __name__ =='__main__':
-    documents = load_documents()
-    print(documents)
+    
 
 def split_text(documents: list[Document]):
   """
@@ -46,12 +47,11 @@ def split_text(documents: list[Document]):
 
   # Split documents into smaller chunks using text splitter
   chunks = text_splitter.split_documents(documents)
-  print(f"Split {len(documents)} documents into {len(chunks)} chunks.")
 
   # Print example of page content and metadata for a chunk
-  document = chunks[0]
-  print(document.page_content)
-  print(document.metadata)
+  # document = chunks[0]
+  # print(document.page_content)
+  # print(document.metadata)
 
   return chunks # Return the list of split text chunks
 
@@ -71,7 +71,7 @@ def save_to_chroma(chunks: list[Document]):
   # Create a new Chroma database from the documents using OpenAI embeddings
   db = Chroma.from_documents(
     chunks,
-    OpenAIEmbeddings(),
+    OpenAIEmbeddings(openai_api_key=openai_api_key),
     persist_directory=CHROMA_PATH
   )
 
@@ -87,15 +87,6 @@ def generate_data_store():
   chunks = split_text(documents) # Split documents into manageable chunks
   save_to_chroma(chunks) # Save the processed data to a data store
 
-generate_data_store()
-query_text = "Explain how the YOLO method works"
-PROMPT_TEMPLATE = """
-Answer the question based only on the following context:
-{context}
- - -
-Answer the question based on the above context: {question}
-"""
-
 def query_rag(query_text):
   """
   Query a Retrieval-Augmented Generation (RAG) system using Chroma database and OpenAI.
@@ -105,8 +96,8 @@ def query_rag(query_text):
     - formatted_response (str): Formatted response including the generated text and sources.
     - response_text (str): The generated response text.
   """
-  # YOU MUST - Use same embedding function as before
-  embedding_function = OpenAIEmbeddings()
+  # YOU MUST - Use the same embedding function as before
+  embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
   # Prepare the database
   db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
@@ -117,6 +108,7 @@ def query_rag(query_text):
   # Check if there are any matching results or if the relevance score is too low
   if len(results) == 0 or results[0][1] < 0.7:
     print(f"Unable to find matching results.")
+    return None, None
 
   # Combine context from matching documents
   context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
@@ -125,14 +117,20 @@ def query_rag(query_text):
   prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
   prompt = prompt_template.format(context=context_text, question=query_text)
   
-  # Initialize OpenAI chat model
+  # Initialize OpenAI chat model (Ollama)
   model = ChatOllama(
     model="llama3.2",
     temperature=0,
-)
+  )
 
-  # Generate response text based on the prompt
-  response_text = model.predict(prompt)
+  print('prompt',type(prompt))
+  # Prepare the prompt in a format that the chat model expects (list of message dictionaries)
+  messages = [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": prompt}
+  ]
+  # Generate response text based on the formatted messages
+  response_text = model.predict(messages)
  
    # Get sources of the matching documents
   sources = [doc.metadata.get("source", None) for doc, _score in results]
@@ -141,6 +139,14 @@ def query_rag(query_text):
   formatted_response = f"Response: {response_text}\nSources: {sources}"
   return formatted_response, response_text
 
+# generate_data_store()
+query_text = "What is the purpose of the data operations engineer?"
+PROMPT_TEMPLATE = """
+Answer the question based only on the following context:
+{context}
+ - -
+Answer the question based on the above context: {question}
+"""
 
 formatted_response, response_text = query_rag(query_text)
 # and finally, inspect our final response!
