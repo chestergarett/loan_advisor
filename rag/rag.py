@@ -112,7 +112,6 @@ def query_rag(query_text):
 
   # Combine context from matching documents
   context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
- 
   # Create prompt template using context and query text
   prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
   prompt = prompt_template.format(context=context_text, question=query_text)
@@ -123,14 +122,13 @@ def query_rag(query_text):
     temperature=0,
   )
 
-  print('prompt',type(prompt))
   # Prepare the prompt in a format that the chat model expects (list of message dictionaries)
   messages = [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": prompt}
   ]
   # Generate response text based on the formatted messages
-  response_text = model.predict(messages)
+  response_text = model.invoke(messages)
  
    # Get sources of the matching documents
   sources = [doc.metadata.get("source", None) for doc, _score in results]
@@ -141,6 +139,7 @@ def query_rag(query_text):
 
 # generate_data_store()
 query_text = "What is the purpose of the data operations engineer?"
+
 PROMPT_TEMPLATE = """
 Answer the question based only on the following context:
 {context}
