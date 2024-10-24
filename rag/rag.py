@@ -2,7 +2,7 @@ from langchain_community.document_loaders.pdf import PyPDFDirectoryLoader # Impo
 from langchain.schema import Document # Importing Document schema from Langchain
 from langchain.text_splitter import RecursiveCharacterTextSplitter # Importing text splitter from Langchain
 from langchain.vectorstores.chroma import Chroma # Importing Chroma vector store from Langchain
-from langchain.embeddings import OpenAIEmbeddings # Importing OpenAI embeddings from Langchain
+from langchain_community.embeddings import OpenAIEmbeddings # Importing OpenAI embeddings from Langchain
 from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_ollama import ChatOllama
 from dotenv import load_dotenv
@@ -134,11 +134,11 @@ def query_rag(query_text):
   sources = [doc.metadata.get("source", None) for doc, _score in results]
  
   # Format and return response including generated text and sources
-  formatted_response = f"Response: {response_text}\nSources: {sources}"
+  formatted_response = response_text.content
   return formatted_response, response_text
 
 # generate_data_store()
-query_text = "What is the purpose of the data operations engineer?"
+# query_text = "What is the purpose of the data operations engineer?"
 
 PROMPT_TEMPLATE = """
 Answer the question based only on the following context:
@@ -147,7 +147,7 @@ Answer the question based only on the following context:
 Answer the question based on the above context: {question}
 """
 
-formatted_response, response_text = query_rag(query_text)
-# and finally, inspect our final response!
-print(response_text)
+# formatted_response, response_text = query_rag(query_text)
+# # and finally, inspect our final response!
+# print(response_text)
 
