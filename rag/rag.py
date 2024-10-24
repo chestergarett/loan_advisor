@@ -10,13 +10,10 @@ import os
 import shutil
 
 
-DATA_PATH = r'./data'
-CHROMA_PATH = r'./chroma/'
-
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
 
-def load_documents():
+def load_documents(DATA_PATH):
   """
   Load PDF documents from the specified directory using PyPDFDirectoryLoader.
   Returns:
@@ -55,7 +52,7 @@ def split_text(documents: list[Document]):
 
   return chunks # Return the list of split text chunks
 
-def save_to_chroma(chunks: list[Document]):
+def save_to_chroma(chunks: list[Document],CHROMA_PATH):
   """
   Save the given list of Document objects to a Chroma database.
   Args:
@@ -79,15 +76,15 @@ def save_to_chroma(chunks: list[Document]):
   db.persist()
   print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
 
-def generate_data_store():
+def generate_data_store(DATA_PATH,CHROMA_PATH):
   """
   Function to generate vector database in chroma from documents.
   """
-  documents = load_documents() # Load documents from a source
+  documents = load_documents(DATA_PATH) # Load documents from a source
   chunks = split_text(documents) # Split documents into manageable chunks
-  save_to_chroma(chunks) # Save the processed data to a data store
+  save_to_chroma(chunks,CHROMA_PATH) # Save the processed data to a data store
 
-def query_rag(query_text):
+def query_rag(query_text,CHROMA_PATH):
   """
   Query a Retrieval-Augmented Generation (RAG) system using Chroma database and OpenAI.
   Args:
