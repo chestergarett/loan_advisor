@@ -17,10 +17,10 @@ class WebScraper:
     def extract_data(self):
         # Extract data from the loaded webpage using Beautiful Soup.
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        
+        print('soup',soup)
         # Extracting all items with a specific class
-        items = soup.find_all(class_='p') 
-        data = [item.get_text(strip=True) for item in items]
+        page_text = soup.get_text()
+        data = page_text.strip()
         
         return data
 
@@ -43,7 +43,7 @@ class WebScraper:
 
     def save_data(self, url, data):
         # Save scraped data to a file
-        with open('scraped_data.txt', 'a') as file:
+        with open(r'data/outputs/scraped_data.txt', 'a') as file:
             file.write(f"Data from {url}:\n")
             for item in data:
                 file.write(f"{item}\n")
@@ -56,4 +56,4 @@ class WebScraper:
  # File containing the URLs to scrape
 if __name__ == "__main__":
     scraper = WebScraper()
-    scraper.scrape_from_file('websites.txt') 
+    scraper.scrape_from_file(r'data/inputs/websites_test.txt') 
