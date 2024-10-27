@@ -8,129 +8,93 @@ from langchain_ollama import ChatOllama
 from dotenv import load_dotenv
 import os
 import shutil
-
+import json
 
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
 
-def load_documents(DATA_PATH):
-  """
-  Load PDF documents from the specified directory using PyPDFDirectoryLoader.
-  Returns:
-  List of Document objects: Loaded PDF documents represented as Langch  ain
-                                                          Document objects.
-  """
-  # Initialize PDF loader with specified directory
+def load_pdf_documents(DATA_PATH):
   document_loader = PyPDFDirectoryLoader(DATA_PATH)
-  # Load PDF documents and return them as a list of Document objects
   return document_loader.load()
     
+def load_json_to_documents(file_path: str) -> list[Document]:
+    documents = []
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    
+    for url, content_dict in data.items():
+        content = content_dict.get('content', "")
+        text_splitter = RecursiveCharacterTextSplitter(
+          chunk_size=300,
+          chunk_overlap=100,
+          length_function=len,
+          add_start_index=True,
+        )
+        chunks = text_splitter.split_text(content)
+        for chunk in chunks:
+            documents.append(Document(page_content=chunk, metadata={"source": url}))
+    
+    return documents
 
 def split_text(documents: list[Document]):
-  """
-  Split the text content of the given list of Document objects into smaller chunks.
-  Args:
-    documents (list[Document]): List of Document objects containing text content to split.
-  Returns:
-    list[Document]: List of Document objects representing the split text chunks.
-  """
-  # Initialize text splitter with specified parameters
   text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=300, # Size of each chunk in characters
-    chunk_overlap=100, # Overlap between consecutive chunks
-    length_function=len, # Function to compute the length of the text
-    add_start_index=True, # Flag to add start index to each chunk
+    chunk_size=300, 
+    chunk_overlap=100, 
+    length_function=len,
+    add_start_index=True, 
   )
 
-  # Split documents into smaller chunks using text splitter
   chunks = text_splitter.split_documents(documents)
-
-  # Print example of page content and metadata for a chunk
-  # document = chunks[0]
-  # print(document.page_content)
-  # print(document.metadata)
-
-  return chunks # Return the list of split text chunks
+  return chunks
 
 def save_to_chroma(chunks: list[Document],CHROMA_PATH):
-  """
-  Save the given list of Document objects to a Chroma database.
-  Args:
-  chunks (list[Document]): List of Document objects representing text chunks to save.
-  Returns:
-  None
-  """
-
-  # Clear out the existing database directory if it exists
   if os.path.exists(CHROMA_PATH):
     shutil.rmtree(CHROMA_PATH)
 
-  # Create a new Chroma database from the documents using OpenAI embeddings
   db = Chroma.from_documents(
     chunks,
     OpenAIEmbeddings(openai_api_key=openai_api_key),
     persist_directory=CHROMA_PATH
   )
 
-  # Persist the database to disk
   db.persist()
   print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
 
-def generate_data_store(DATA_PATH,CHROMA_PATH):
-  """
-  Function to generate vector database in chroma from documents.
-  """
-  documents = load_documents(DATA_PATH) # Load documents from a source
-  chunks = split_text(documents) # Split documents into manageable chunks
-  save_to_chroma(chunks,CHROMA_PATH) # Save the processed data to a data store
+def generate_data_store(DATA_PATH,CHROMA_PATH,data_type):
+  if data_type=='PDF':
+    documents = load_pdf_documents(DATA_PATH)
+    chunks = split_text(documents)
+    save_to_chroma(chunks,CHROMA_PATH)
+  elif data_type=='JSON':
+    documents = load_json_to_documents(DATA_PATH)
+    save_to_chroma(documents,CHROMA_PATH)
 
 def query_rag(query_text,CHROMA_PATH):
-  """
-  Query a Retrieval-Augmented Generation (RAG) system using Chroma database and OpenAI.
-  Args:
-    - query_text (str): The text to query the RAG system with.
-  Returns:
-    - formatted_response (str): Formatted response including the generated text and sources.
-    - response_text (str): The generated response text.
-  """
-  # YOU MUST - Use the same embedding function as before
   embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
-
-  # Prepare the database
   db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
-  
-  # Retrieving the context from the DB using similarity search
   results = db.similarity_search_with_relevance_scores(query_text, k=3)
-
-  # Check if there are any matching results or if the relevance score is too low
   if len(results) == 0 or results[0][1] < 0.7:
     print(f"Unable to find matching results.")
     return None, None
 
-  # Combine context from matching documents
   context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
-  # Create prompt template using context and query text
   prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
   prompt = prompt_template.format(context=context_text, question=query_text)
   
-  # Initialize OpenAI chat model (Ollama)
   model = ChatOllama(
     model="llama3.2",
     temperature=0,
   )
 
-  # Prepare the prompt in a format that the chat model expects (list of message dictionaries)
   messages = [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": prompt}
   ]
-  # Generate response text based on the formatted messages
+
   response_text = model.invoke(messages)
  
-   # Get sources of the matching documents
   sources = [doc.metadata.get("source", None) for doc, _score in results]
  
-  # Format and return response including generated text and sources
   formatted_response = response_text.content
   return formatted_response, response_text
 

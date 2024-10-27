@@ -1,3 +1,4 @@
 
 CHROMA_PATH = r'./chroma/'
-DATA_PATH = r'./data/inputs/pdf'
+PDF_PATH = r'./data/inputs/pdf'
+JSON_PATH = r'./data/outputs/scraped_data.json'

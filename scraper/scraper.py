@@ -3,6 +3,9 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
+import json
+import os
+import re
 
 class WebScraper:
     def __init__(self):
@@ -17,16 +20,23 @@ class WebScraper:
     def extract_data(self):
         # Extract data from the loaded webpage using Beautiful Soup.
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-        print('soup',soup)
         # Extracting all items with a specific class
         page_text = soup.get_text()
-        data = page_text.strip()
+        data = f'{page_text.strip()}'
         
         return data
 
-    def scrape_from_file(self, file_path):
+    def clean_text(self, text, keep_chars=[".", ",", " "]):
+        pattern = f"[^{''.join(re.escape(char) for char in keep_chars)}a-zA-Z0-9]"
+        cleaned_text = re.sub(pattern, "", text)
+        cleaned_text = re.sub(r"\s+", " ", cleaned_text)
+        cleaned_text = cleaned_text.strip()
+        
+        return cleaned_text
+
+    def scrape_from_file(self, input_path,output_path):
         # Read URLs from a text file and scrape each page
-        with open(file_path, 'r') as file:
+        with open(input_path, 'r') as file:
             urls = file.readlines()
         
         for url in urls:
@@ -35,19 +45,23 @@ class WebScraper:
                 print(f"Scraping: {url}")
                 self.navigate_to_page(url)
                 data = self.extract_data()
-                print(f"Data extracted from {url}: {data}")
-            
-                self.save_data(url, data)
-                
+                cleaned_data = self.clean_text(data)
+                self.save_data(url, cleaned_data,output_path)
+                print(f'Scraping: File saved to JSON')
         self.quit()
 
-    def save_data(self, url, data):
+    def save_data(self, url, data,output_path):
         # Save scraped data to a file
-        with open(r'data/outputs/scraped_data.txt', 'a') as file:
-            file.write(f"Data from {url}:\n")
-            for item in data:
-                file.write(f"{item}\n")
-            file.write("\n")
+        if os.path.exists(output_path):
+            with open(output_path, 'r') as json_file:
+                existing_data = json.load(json_file)
+        else:
+            existing_data = {}
+
+        existing_data[url] = {'content': data}
+
+        with open(output_path, 'w') as json_file:
+            json.dump(existing_data, json_file)
 
     def quit(self):
         # Quit the WebDriver
@@ -55,5 +69,7 @@ class WebScraper:
 
  # File containing the URLs to scrape
 if __name__ == "__main__":
+    INPUT_PATH = r'data/inputs/websites/websites_test.txt'
+    OUTPUT_PATH = r'data/outputs/scraped_data.json'
     scraper = WebScraper()
-    scraper.scrape_from_file(r'data/inputs/websites_test.txt') 
+    scraper.scrape_from_file(INPUT_PATH,OUTPUT_PATH) 

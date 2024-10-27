@@ -1,6 +1,6 @@
 import streamlit as st
 from rag.rag import query_rag
-from constants.filepaths import DATA_PATH, CHROMA_PATH
+from constants.filepaths import CHROMA_PATH
 
 st.title("MSME Loan Advisor")
 
