@@ -8,7 +8,15 @@ from langchain_ollama import ChatOllama
 from dotenv import load_dotenv
 import os
 import shutil
+<<<<<<< Updated upstream
 import json
+=======
+import pandas as pd
+
+
+DATA_PATH = r'./data'
+CHROMA_PATH = r'./chroma/'
+>>>>>>> Stashed changes
 
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
