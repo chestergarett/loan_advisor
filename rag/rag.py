@@ -9,9 +9,26 @@ from dotenv import load_dotenv
 import os
 import shutil
 import json
+import pandas as pd
 
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
+
+#Dataset loader- This block of code is for checking and testing only. Can be deleted after use.
+datasets = os.path.join("data", "inputs", "bpi_datasets")
+files = os.listdir(datasets)
+print("Files in directory:", files)
+
+if os.path.exists(datasets):
+    for file_name in os.listdir(datasets):
+        file_path = os.path.join(datasets, file_name)
+        
+        if file_name.endswith(".parquet"):
+            df = pd.read_parquet(file_path)
+            print(f"Contents of {file_name}:\n{df}\n") 
+else:
+    print(f"The path {datasets} does not exist.")
+#End of dataset loader test code
 
 def load_pdf_documents(DATA_PATH):
   document_loader = PyPDFDirectoryLoader(DATA_PATH)
@@ -60,6 +77,29 @@ def save_to_chroma(chunks: list[Document],CHROMA_PATH):
   db.persist()
   print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
 
+#Parquet loader
+def load_parquet_documents(parquet_folder_path: str) -> list[Document]:
+    documents = []
+    for file_name in os.listdir(parquet_folder_path):
+        if file_name.endswith(".parquet"):
+            file_path = os.path.join(parquet_folder_path, file_name)
+            # Load parquet file
+            df = pd.read_parquet(file_path)
+            # Preprocessing
+            df = df.dropna()  
+            df = df.drop_duplicates()
+            
+            #Display all contents
+            # print(f"Contents of {file_name}:\n{df}\n") 
+            
+            
+            for _, row in df.iterrows():
+                # Row to JSON string for consistency
+                content = json.dumps(row.to_dict())  
+                documents.append(Document(page_content=content, metadata={"source": file_name}))
+                
+    return documents
+  
 def generate_data_store(DATA_PATH,CHROMA_PATH,data_type):
   if data_type=='PDF':
     documents = load_pdf_documents(DATA_PATH)
@@ -68,6 +108,11 @@ def generate_data_store(DATA_PATH,CHROMA_PATH,data_type):
   elif data_type=='JSON':
     documents = load_json_to_documents(DATA_PATH)
     save_to_chroma(documents,CHROMA_PATH)
+  elif data_type == 'PARQUET':
+    documents = load_parquet_documents(DATA_PATH)
+    save_to_chroma(documents,CHROMA_PATH)
+  else:
+    print("Invalid data type. Please choose from PDF, JSON, PARQUET.")
 
 def query_rag(query_text,CHROMA_PATH):
   embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
