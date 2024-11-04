@@ -36,6 +36,7 @@ def load_json_to_documents(file_path: str) -> list[Document]:
     
     return documents
 
+
 def split_text(documents: list[Document]):
   text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=300, 
