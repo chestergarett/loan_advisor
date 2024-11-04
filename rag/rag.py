@@ -5,6 +5,9 @@ from langchain.vectorstores.chroma import Chroma # Importing Chroma vector store
 from langchain_community.embeddings import OpenAIEmbeddings # Importing OpenAI embeddings from Langchain
 from langchain_core.prompts.chat import ChatPromptTemplate
 from langchain_ollama import ChatOllama
+from langsmith import traceable
+from langsmith import Client
+from langsmith.run_trees import RunTree
 from dotenv import load_dotenv
 import os
 import shutil
@@ -13,22 +16,10 @@ import pandas as pd
 
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
-
-#Dataset loader- This block of code is for checking and testing only. Can be deleted after use.
-datasets = os.path.join("data", "inputs", "bpi_datasets")
-files = os.listdir(datasets)
-print("Files in directory:", files)
-
-if os.path.exists(datasets):
-    for file_name in os.listdir(datasets):
-        file_path = os.path.join(datasets, file_name)
-        
-        if file_name.endswith(".parquet"):
-            df = pd.read_parquet(file_path)
-            print(f"Contents of {file_name}:\n{df}\n") 
-else:
-    print(f"The path {datasets} does not exist.")
-#End of dataset loader test code
+langchain_tracing = os.getenv('LANGCHAIN_TRACING_V2')
+langchain_endpoint = os.getenv('LANGCHAIN_ENDPOINT')
+langchain_api_key = os.getenv('LANGCHAIN_API_KEY')
+langchain_project = os.getenv('LANGCHAIN_PROJECT')
 
 def load_pdf_documents(DATA_PATH):
   document_loader = PyPDFDirectoryLoader(DATA_PATH)
@@ -72,7 +63,8 @@ def save_to_chroma(chunks: list[Document],CHROMA_PATH):
   db = Chroma.from_documents(
     chunks,
     OpenAIEmbeddings(openai_api_key=openai_api_key),
-    persist_directory=CHROMA_PATH
+    persist_directory=CHROMA_PATH,
+    collection_name="loan_documents"  
   )
 
   db.persist()
@@ -84,20 +76,18 @@ def load_parquet_documents(parquet_folder_path: str) -> list[Document]:
     for file_name in os.listdir(parquet_folder_path):
         if file_name.endswith(".parquet"):
             file_path = os.path.join(parquet_folder_path, file_name)
-            # Load parquet file
             df = pd.read_parquet(file_path)
-            # Preprocessing
+            id_columns = [col for col in df.columns if col.endswith('_ID')]
+            for id_col in id_columns:
+               df[id_col] = df[id_col].astype(str)
             df = df.dropna()  
             df = df.drop_duplicates()
-            
-            #Display all contents
-            # print(f"Contents of {file_name}:\n{df}\n") 
-            
-            
             for _, row in df.iterrows():
-                # Row to JSON string for consistency
-                content = json.dumps(row.to_dict())  
-                documents.append(Document(page_content=content, metadata={"source": file_name}))
+              content = {key: (value.isoformat() if isinstance(value, pd.Timestamp) else value) for key, value in row.to_dict().items()}
+              content_str = json.dumps(content)  # Convert to JSON string
+              documents.append(Document(page_content=content_str, metadata={"source": file_name}))
+
+            df.to_csv(f'data/inputs/csv/{file_name}.csv')
                 
     return documents
   
@@ -115,22 +105,19 @@ def generate_data_store(DATA_PATH,CHROMA_PATH,data_type):
   else:
     print("Invalid data type. Please choose from PDF, JSON, PARQUET.")
 
-def query_rag(query_text,CHROMA_PATH):
+@traceable(run_type="retriever")
+def get_retriever(query_text,CHROMA_PATH):
   embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
   db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
-  results = db.similarity_search_with_relevance_scores(query_text, k=3)
-  if len(results) == 0 or results[0][1] < 0.7:
-    print(f"Unable to find matching results.")
-    return None, None
+  results = db.similarity_search_with_relevance_scores(query_text, k=20)
+  return results
 
-  context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
-  prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-  prompt = prompt_template.format(context=context_text, question=query_text)
-  
+@traceable(run_type='llm')
+def invoke_llm(prompt):
   model = ChatOllama(
-    model="llama3.2",
-    temperature=0,
-  )
+  model="llama3.2",
+  temperature=0,
+)
 
   messages = [
       {"role": "system", "content": "You are a helpful assistant."},
@@ -138,9 +125,22 @@ def query_rag(query_text,CHROMA_PATH):
   ]
 
   response_text = model.invoke(messages)
+  return response_text
+
+@traceable
+def query_rag(query_text,CHROMA_PATH):
+  results = get_retriever(query_text,CHROMA_PATH)
+  if len(results) == 0 or results[0][1] < 0.7:
+    print(f"Unable to find matching results.")
+    return None, None
+  
+  context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
+  prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+  prompt = prompt_template.format(context=context_text, question=query_text)
+
  
   sources = [doc.metadata.get("source", None) for doc, _score in results]
- 
+  response_text = invoke_llm(prompt)
   formatted_response = response_text.content
   return formatted_response, response_text
 
