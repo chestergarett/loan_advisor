@@ -4,3 +4,5 @@ data/inputs/parquets
 .env
 .DS_Store
 **/__pycache__/
+chroma
+CHROMA_PATH

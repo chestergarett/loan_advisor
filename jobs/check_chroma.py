@@ -10,7 +10,8 @@ def get_chroma_docs():
     # Connect to Chroma DB
     embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
     db = Chroma(collection_name='loan_documents',persist_directory=CHROMA_PATH, embedding_function=embedding_function)    # Access the 'loan_documents' collection with persistence
-    print(db.get())
+    results = db.get()
+    print(results)
 
 if __name__=='__main__':
     get_chroma_docs()

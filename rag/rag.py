@@ -13,6 +13,7 @@ import os
 import shutil
 import json
 import pandas as pd
+import re
 
 load_dotenv()
 openai_api_key = os.getenv('OPEN_AI_API_KEY')
@@ -58,17 +59,25 @@ def split_text(documents: list[Document]):
 
 def save_to_chroma(chunks: list[Document],CHROMA_PATH):
   if os.path.exists(CHROMA_PATH):
-    shutil.rmtree(CHROMA_PATH)
-
-  db = Chroma.from_documents(
-    chunks,
-    OpenAIEmbeddings(openai_api_key=openai_api_key),
-    persist_directory=CHROMA_PATH,
-    collection_name="loan_documents"  
-  )
-
+    db = Chroma(
+        collection_name="loan_documents",
+        persist_directory=CHROMA_PATH,
+        embedding_function=OpenAIEmbeddings(openai_api_key=openai_api_key)
+    )
+  else:
+    db = Chroma.from_documents(
+        chunks,
+        OpenAIEmbeddings(openai_api_key=openai_api_key),
+        persist_directory=CHROMA_PATH,
+        collection_name="loan_documents"
+    )
+    
+  # Add new documents to the collection
+  db.add_documents(chunks)
+  
+  # Persist changes
   db.persist()
-  print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
+  print(f"Appended {len(chunks)} chunks to {CHROMA_PATH}.")
 
 #Parquet loader
 def load_parquet_documents(parquet_folder_path: str) -> list[Document]:
@@ -85,7 +94,8 @@ def load_parquet_documents(parquet_folder_path: str) -> list[Document]:
             for _, row in df.iterrows():
               content = {key: (value.isoformat() if isinstance(value, pd.Timestamp) else value) for key, value in row.to_dict().items()}
               content_str = json.dumps(content)  # Convert to JSON string
-              documents.append(Document(page_content=content_str, metadata={"source": file_name}))
+              customer_id = row['CUSTOMER_ID']
+              documents.append(Document(page_content=content_str, metadata={"source": file_name, "customer_id": customer_id}))
 
             df.to_csv(f'data/inputs/csv/{file_name}.csv')
                 
@@ -108,9 +118,31 @@ def generate_data_store(DATA_PATH,CHROMA_PATH,data_type):
 @traceable(run_type="retriever")
 def get_retriever(query_text,CHROMA_PATH):
   embedding_function = OpenAIEmbeddings(openai_api_key=openai_api_key)
-  db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
-  results = db.similarity_search_with_relevance_scores(query_text, k=20)
-  return results
+  db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function,collection_name="loan_documents")
+  customer_id_match = re.search(r"(\d+\.?\d*)", query_text)
+
+  metadata_results = []
+  similarity_results = []
+  
+  if customer_id_match:
+    customer_id = customer_id_match.group(1)
+    filter_dict = {"customer_id": {"$in": [customer_id]}}
+    print(f"Searching for documents with Customer ID: {customer_id}")
+    base_retriever = db.as_retriever(search_kwargs={'k': 10, 'filter': filter_dict})
+    metadata_results = base_retriever.invoke(query_text)
+    metadata_results_final = []
+    for metadata_result in metadata_results:
+      metadata_results_final.append([metadata_result,1])
+    query_text = re.sub(r"Customer ID \d+\.?\d*", "", query_text).strip()
+
+  if query_text:
+    print("Performing similarity search on the remaining query...")
+    similarity_results = db.similarity_search_with_relevance_scores(query_text, k=20)
+  
+  print('metadata_results',metadata_results)
+  combined_results = metadata_results_final + similarity_results
+  
+  return combined_results
 
 @traceable(run_type='llm')
 def invoke_llm(prompt):
