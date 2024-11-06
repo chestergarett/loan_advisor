@@ -121,16 +121,14 @@ def get_retriever(query_text,CHROMA_PATH):
   db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function,collection_name="loan_documents")
   customer_id_match = re.search(r"(\d+\.?\d*)", query_text)
 
-  metadata_results = []
+  metadata_results_final = []
   similarity_results = []
-  
+  customer_id = 'None'
   if customer_id_match:
     customer_id = customer_id_match.group(1)
     filter_dict = {"customer_id": {"$in": [customer_id]}}
-    print(f"Searching for documents with Customer ID: {customer_id}")
-    base_retriever = db.as_retriever(search_kwargs={'k': 10, 'filter': filter_dict})
+    base_retriever = db.as_retriever(search_kwargs={'k': 1, 'filter': filter_dict})
     metadata_results = base_retriever.invoke(query_text)
-    metadata_results_final = []
     for metadata_result in metadata_results:
       metadata_results_final.append([metadata_result,1])
     query_text = re.sub(r"Customer ID \d+\.?\d*", "", query_text).strip()
@@ -138,11 +136,9 @@ def get_retriever(query_text,CHROMA_PATH):
   if query_text:
     print("Performing similarity search on the remaining query...")
     similarity_results = db.similarity_search_with_relevance_scores(query_text, k=20)
-  
-  print('metadata_results',metadata_results)
-  combined_results = metadata_results_final + similarity_results
-  
-  return combined_results
+    similarity_results = [[doc[0],doc[1]] for doc in similarity_results if not doc[0].metadata['source'].endswith('.parquet')]
+
+  return customer_id,metadata_results_final,similarity_results
 
 @traceable(run_type='llm')
 def invoke_llm(prompt):
@@ -159,29 +155,45 @@ def invoke_llm(prompt):
   response_text = model.invoke(messages)
   return response_text
 
+chat_history = []
+
+
 @traceable
 def query_rag(query_text,CHROMA_PATH):
-  results = get_retriever(query_text,CHROMA_PATH)
-  if len(results) == 0 or results[0][1] < 0.7:
+  customer_id,metadata_results,similarity_results = get_retriever(query_text,CHROMA_PATH)
+  combined_results = metadata_results + similarity_results
+  
+  if len(combined_results) == 0:
     print(f"Unable to find matching results.")
     return None, None
   
-  context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in results])
-  prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-  prompt = prompt_template.format(context=context_text, question=query_text)
+  historical_chat_context = "\n\n".join(
+        [f"User: {msg['user_query']}\nAssistant: {msg['assistant_response']}" for msg in chat_history]
+    )
 
- 
-  sources = [doc.metadata.get("source", None) for doc, _score in results]
+  metadata_context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in metadata_results])
+  similarity_context_text = "\n\n - -\n\n".join([doc.page_content for doc, _score in similarity_results])
+  prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+  prompt = prompt_template.format(customer_id=customer_id, customer_context=metadata_context_text, msme_context=similarity_context_text, question=query_text)
+
+  sources = [doc.metadata.get("source", None) for doc, _score in combined_results]
   response_text = invoke_llm(prompt)
   formatted_response = response_text.content
+  chat_history.append({"user_query": query_text, "assistant_response": formatted_response})
   return formatted_response, response_text
 
 # generate_data_store()
 # query_text = "What is the purpose of the data operations engineer?"
 
 PROMPT_TEMPLATE = """
-Answer the question based only on the following context:
-{context}
+You are analyzing customer loan data and potential MSME loan opportunities.
+First, check if there’s any information for the given customer_id: {customer_id}.
+
+Customer Loan Information:
+{customer_context}
+
+MSME Loan Information:
+{msme_context}
  - -
 Answer the question based on the above context: {question}
 """
