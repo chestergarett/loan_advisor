@@ -6,7 +6,7 @@ from constants.filepaths import PDF_PATH, CHROMA_PATH, JSON_PATH, PARQUET_PATH
 
 save_pdf_to_chroma = True
 save_json_to_chroma = True
-save_parquet_to_chroma = False
+save_parquet_to_chroma = True
 
 if save_pdf_to_chroma:
     generate_data_store(PDF_PATH,CHROMA_PATH,'PDF')
