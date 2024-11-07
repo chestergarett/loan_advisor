@@ -27,3 +27,8 @@
 ## How to run the application?
 1) Run in terminal:
     `streamlit run app.py`
+
+
+
+https://github.com/user-attachments/assets/97a1ca95-e686-4a3c-a392-541334f76f2f
+
